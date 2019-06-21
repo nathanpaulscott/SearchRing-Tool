@@ -1,5 +1,4 @@
-SAR Tool
------------------------
+# SAR Tool
 
 The tool package consists of 4 files, 2 of them are critical:
 -----------------------------------------------
