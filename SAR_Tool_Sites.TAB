@@ -1,0 +1,28 @@
+!table
+!version 450
+!charset WindowsLatin1
+
+Definition Table
+  Type NATIVE Charset "WindowsLatin1"
+  Fields 21
+    Form_Type Char (3) ;
+    Site_Name Char (14) ;
+    Site_Id Char (7) ;
+    Zone_Region Char (9) ;
+    City Char (10) ;
+    Lat Float ;
+    N_S Char (1) ;
+    Lon Float ;
+    E_W Char (1) ;
+    Morphology Char (2) ;
+    Search_Ring_Radius Float ;
+    Antenna_Ht Float ;
+    Cov_Objectives Char (59) ;
+    Comments Char (42) ;
+    SITAC_Coordinator Char (16) ;
+    RF_Engineer Char (13) ;
+    RF_Manager Char (12) ;
+    Recipient Char (7) ;
+    Revision Char (4) ;
+    Issue_Date Char (7) ;
+    Due_Date Char (7) ;

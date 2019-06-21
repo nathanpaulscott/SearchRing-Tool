@@ -1,0 +1,13 @@
+Global cancel_import, SAR_Tool_Rings_exists, SAR_Tool_Sitesx_exists, SAR_Tool_Sites_exists, input_fail, seed_is_open, can_open_xl, xl_is_open, q1_exists As logical
+Global enable_toolbar_1, enable_toolbar_2 As Logical
+Global ch_id_1, ch_id_2, ch_id_3 As Integer
+Global tool_dir, proj, user_path, input_filename, input_filename_short  As String
+Global site_sym As Symbol
+Global ring_pen As Pen
+Global ring_brush As Brush
+Global site_font As Font
+Global map_zoom As Float
+
+Global lat_orig, lon_orig, dist As Float
+
+Define PI 3.141593	'this is pi

@@ -1,0 +1,1098 @@
+Include "MAPBASIC.DEF"
+Include "ICONS.DEF"
+Include "MENU.DEF"
+Include "globals.def"
+
+Declare Sub main
+Declare Sub check_q1_sub 
+Declare Sub check_tables_sub 
+Declare Sub toolbar_sub 
+Declare Sub pre_import_sub 
+Declare Sub import_sub 
+Declare Sub pre_export_sub 
+Declare Sub export_sub 
+Declare Sub edit_settings_sub 
+Declare Sub load_settings_sub 
+Declare Sub save_settings_sub 
+Declare Sub load_default_settings_sub 
+Declare Sub x_factor_sub
+
+Sub main
+'-------------------- Start of actual program commands---------------------------------
+
+	Set ProgressBars Off
+	Set Distance Units "km"
+
+
+
+	'This sets some global flags
+	'--------------------------------
+	q1_exists = False
+	SAR_Tool_Sitesx_exists = False
+	SAR_Tool_Sites_exists = False
+	SAR_Tool_Rings_exists = False
+	enable_toolbar_1 = False
+	enable_toolbar_2 = False
+	user_path = ""
+	can_open_xl = False
+	xl_is_open = False
+	seed_is_open = False
+	tool_dir = ApplicationDirectory$()
+	input_fail = False
+	cancel_import = False
+	map_zoom = 10
+
+	'Copy Protection - can only use the tool in this area
+	'--------------------------------------------
+	lat_orig = 11.558636 
+	lon_orig = 104.917516
+	dist = 20
+
+
+	'This sets the default symbol, pen, brush and font values
+	'--------------------------------	
+	site_sym = MakeSymbol (34,16711680,12)
+	site_font = MakeFont ("Arial",257,8,0,16777215)
+	ring_pen = MakePen (3,4,16711680)
+	ring_brush = MakeBrush (1,16777215,16777215)
+
+
+
+	'This closes Query1 if it is open before we start the program, if we don't close it, it will crash
+	'------------------------------------------
+	Call check_q1_sub
+	If q1_exists = True Then 
+		Close Table Query1 
+	End If   
+
+
+	'This check the status of the main tables and sets flags to indicate their current status (open or closed)
+	'------------------------------------------
+	Call check_tables_sub
+
+
+'---------------------------------------------------
+
+	Call toolbar_sub
+
+'---------------------------------------------------
+
+
+Set ProgressBars On
+End Sub
+
+'*********************************************************************************************************************************
+'*****************************************************END OF MAIN*****************************************************************
+'*********************************************************************************************************************************
+
+
+
+
+
+
+
+
+'---------------------------------------------------
+' this checks if the query1 table is open, if it isn't it sets a flag
+'---------------------------------------------------
+Sub check_q1_sub
+
+	q1_exists = False
+	 
+OnError GoTo closed1
+	If TableInfo(Query1, TAB_INFO_TEMP) = False Then
+		q1_exists = True
+	End  If
+	 
+returnpoint1:
+	Exit Sub
+
+closed1:
+Resume returnpoint1
+
+End Sub
+'---------------------------------------------------
+
+
+
+
+
+'---------------------------------------------------
+' this checks if other VIP tables are open, then sets flags
+'---------------------------------------------------
+Sub check_tables_sub
+
+	SAR_Tool_Sitesx_exists = False
+	SAR_Tool_Sites_exists = False
+	SAR_Tool_Rings_exists = False
+	 
+OnError GoTo closed1
+	If TableInfo(SAR_Tool_Sitesx, TAB_INFO_TEMP) = False Then
+		SAR_Tool_Sitesx_exists = True
+	End  If
+	 
+returnpoint1:
+
+OnError GoTo closed2
+	If TableInfo(SAR_Tool_Sites, TAB_INFO_TEMP) = False Then
+		SAR_Tool_Sites_exists = True
+	End  If
+	 
+returnpoint2:
+
+OnError GoTo closed3
+	If TableInfo(SAR_Tool_Rings, TAB_INFO_TEMP) = False Then
+		SAR_Tool_Rings_exists = True
+	End  If
+	 
+returnpoint3:
+
+	Exit Sub
+
+'--------------------------
+closed1:
+Resume returnpoint1
+
+closed2:
+Resume returnpoint2
+
+closed3:
+Resume returnpoint3
+
+End Sub
+'---------------------------------------------------
+
+
+
+
+
+
+
+Sub toolbar_sub
+'---------------------------------------------------
+' this creates the main program control buttons
+'---------------------------------------------------
+	Create ButtonPad "Utils" As
+
+	PushButton
+	Calling pre_import_sub
+	Icon MI_ICON_OPEN_FILE
+	HelpMsg "Import Sites and Create Tables \n Import Sites and Create Tables"
+	Enable
+	ID 1
+
+	Separator
+
+	PushButton
+	Calling pre_export_sub
+	Icon MI_ICON_MISC_27
+	HelpMsg "Create SR Forms \n Create SR Forms"
+	Disable
+	ID 2
+
+	Title "Nat's SR Tool"
+	Width 3
+
+End Sub
+'---------------------------------------------------
+
+
+
+
+
+
+
+
+
+
+
+'---------------------------------------------------
+' this prepares for the import sub
+'---------------------------------------------------
+Sub pre_import_sub
+
+'does nothing right now
+
+	Call import_sub
+
+End Sub
+'---------------------------------------------------
+
+
+
+
+
+'---------------------------------------------------
+' this imports the nominal site data and creates the search rings using the buffer function
+'---------------------------------------------------
+Sub import_sub
+Dim i_win_id, i_row_id, i,j,k As Integer
+Dim cell_data_alias As Alias
+Dim srrad, coordx, coordy As Float
+Dim site_obj, ring_obj As Object
+Dim no_mapper_flag As Logical
+Dim bearingx, bearingy As String
+
+
+	'this imports a tab delimited .txt file with the correct column headers and data
+	'----------------------------------------------------------------------------------
+OnError Goto general_error
+file_used_return:
+	input_filename = FileOpenDlg("","","xls","Please select your input file...")
+	If input_filename = "" Then
+		Exit Sub
+	End If
+
+	user_path = PathToDirectory$(input_filename)               'this will overwrite any user_path already set
+	input_filename_short = PathToFileName$(input_filename)  
+
+
+
+	'This opens the selected xls file and calls it a table = SAR_Tool_Sites.tab
+	'----------------------------------------------------------
+	Call check_q1_sub
+	If q1_exists = True Then
+		Close Table Query1
+	End If
+	Call check_tables_sub
+	If SAR_Tool_Sitesx_exists = True Then
+		Close Table SAR_Tool_Sitesx
+	End If
+	If SAR_Tool_Sites_exists = True Then
+		Close Table SAR_Tool_Sites
+	End If
+	If SAR_Tool_Rings_exists = True Then
+		Close Table SAR_Tool_Rings
+	End If
+
+
+	Register Table input_filename  TYPE XLS Titles Range "Sheet1!A2:U20000" Into user_path + "SAR_Tool_Sitesx.tab"
+	Open Table user_path + "SAR_Tool_Sitesx.tab"
+
+	'Here we separate out the form types
+	'-----------------------------------
+	Select * From SAR_Tool_Sitesx Where Form_Type = "SAR" Into Query1
+	'------------------------------------------
+
+	Commit Table Query1 As user_path + "SAR_Tool_Sites.tab" TYPE NATIVE Charset "WindowsLatin1"
+	Open Table user_path + "SAR_Tool_Sites.tab"
+
+	Close Table Query1
+	Close Table SAR_Tool_Sitesx
+	If FileExists(user_path + "SAR_Tool_Sitesx.tab") = True Then
+		Kill user_path + "SAR_Tool_Sitesx.tab"
+	End If
+	'-----------------------------------------------
+
+
+	'This checks the input data so that certain fields conform to the required variable types
+	'------------------------------------------------------------------------------------------------------------
+	input_fail = False
+	If Columninfo("SAR_Tool_Sites","Lat",COL_INFO_TYPE) = 1 Then           ' Then there is a non number value in this column
+		input_fail = True
+		Note "One of the fields (lat/Lon/Search Ring Radius/Antenna Ht) has a non-number value, please check and try again"
+	End If
+	If Columninfo("SAR_Tool_Sites","Lon",COL_INFO_TYPE) = 1 Then           ' Then there is a non number value in this column
+		input_fail = True
+		Note "One of the fields (lat/Lon/Search Ring Radius/Antenna Ht) has a non-number value, please check and try again"
+	End If
+	If Columninfo("SAR_Tool_Sites","Search_Ring_Radius",COL_INFO_TYPE) = 1 Then           ' Then there is a non number value in this column
+		input_fail = True
+		Note "One of the fields (lat/Lon/Search Ring Radius/Antenna Ht) has a non-number value, please check and try again"
+	End If
+	If Columninfo("SAR_Tool_Sites","Antenna_Ht",COL_INFO_TYPE) = 1 Then           ' Then there is a non number value in this column
+		input_fail = True
+		Note "One of the fields (lat/Lon/Search Ring Radius/Antenna Ht) has a non-number value, please check and try again"
+	End If
+
+
+	'This checks all lat/lon/E_W/N_S fields
+	'----------------------------------------
+	Fetch First from SAR_Tool_sites
+	Do While Not EOT	(SAR_Tool_Sites)
+		cell_data_alias = SAR_Tool_Sites + ".Lon"
+		coordx = cell_data_alias
+		cell_data_alias = SAR_Tool_Sites + ".Lat"
+		coordy = cell_data_alias
+		cell_data_alias = SAR_Tool_Sites + ".N_S"
+		bearingy = cell_data_alias
+		cell_data_alias = SAR_Tool_Sites + ".E_W"
+		bearingx = cell_data_alias
+		cell_data_alias = SAR_Tool_Sites + ".rowid"
+		i_row_id = cell_data_alias
+		
+		If coordx < 0 or coordy < 0 or (bearingx <> "E" and bearingx <> "W") or (bearingy <> "N" and bearingy <> "S") Then    'there are erroneous inputs, so reject it
+			Note "There are issues with the coords in row " + i_row_id + "...  Please fix and try again"
+			input_fail = True
+			Exit Do
+		End If
+		Fetch Next from SAR_Tool_sites
+	Loop
+
+	If input_fail = True Then
+		Close Table SAR_Tool_Sites
+		If FileExists(user_path + "SAR_Tool_Sites.tab") = True Then
+			Kill user_path + "SAR_Tool_Sites.tab"
+		End If
+		If FileExists(user_path + "SAR_Tool_Sites.dat") = True Then
+			Kill user_path + "SAR_Tool_Sites.dat"
+		End If
+		Exit Sub
+	End If
+
+
+	Call x_factor_sub
+
+
+	'this gets the projection off the user, then makes the tables mappable
+	'----------------------------------------------------------------------
+	proj = ChooseProjection$( "", True)
+
+
+	' This sets the projection
+	'------------------------------------
+	Run Command "Set " + proj          ' need to set the coord sys so that mapinfo uses the sys we select
+
+	Call edit_settings_sub
+
+	If cancel_import = True Then
+		Exit Sub
+	End If
+
+
+	'This creates points for the SAR_Tool_Sites table and then creates the SAR_Tool_Rings table
+	'-------------------------------------------------------------------
+	Create Index On SAR_Tool_Sites (Site_Name)
+	Create Index On SAR_Tool_Sites (Site_Id)
+	Run Command "Create Map for " + SAR_Tool_Sites + " " + proj 
+
+	Commit Table SAR_Tool_Sites As user_path + "SAR_Tool_Rings.tab" TYPE NATIVE Charset "WindowsLatin1"
+	Open Table user_path + "SAR_Tool_Rings.tab"
+	
+	Fetch first from SAR_Tool_Sites
+	Do While Not EOT(SAR_Tool_Sites)
+		cell_data_alias = SAR_Tool_Sites + ".Lon"
+		coordx = cell_data_alias
+		cell_data_alias = SAR_Tool_Sites + ".Lat"
+		coordy = cell_data_alias
+		cell_data_alias = SAR_Tool_Sites + ".N_S"
+		bearingy = cell_data_alias
+		cell_data_alias = SAR_Tool_Sites + ".E_W"
+		bearingx = cell_data_alias
+		cell_data_alias = SAR_Tool_Sites + ".rowid"
+		i_row_id = cell_data_alias
+
+		If bearingx = "W" Then
+			coordx = -coordx
+		End If
+		If bearingy = "S" Then
+			coordy = -coordy
+		End If
+
+		site_obj = CreatePoint(coordx, coordy)
+
+		Alter Object site_obj
+		Info OBJ_INFO_SYMBOL, site_sym
+		Update SAR_Tool_Sites
+			Set obj = site_obj where rowid = i_row_id
+
+		Fetch next from SAR_Tool_Sites
+	Loop
+	Commit Table SAR_Tool_Sites
+
+	Fetch first from SAR_Tool_Rings
+	Do While Not EOT(SAR_Tool_Rings)
+		cell_data_alias = SAR_Tool_Rings + ".Lon"
+		coordx = cell_data_alias
+		cell_data_alias = SAR_Tool_Rings + ".Lat"
+		coordy = cell_data_alias
+		cell_data_alias = SAR_Tool_Rings + ".N_S"
+		bearingy = cell_data_alias
+		cell_data_alias = SAR_Tool_Rings + ".E_W"
+		bearingx = cell_data_alias
+		cell_data_alias = SAR_Tool_Rings + ".Search_Ring_Radius"
+		srrad = cell_data_alias
+		cell_data_alias = SAR_Tool_Rings + ".rowid"
+		i_row_id = cell_data_alias
+
+		If bearingx = "W" Then
+			coordx = -coordx
+		End If
+		If bearingy = "S" Then
+			coordy = -coordy
+		End If
+
+		ring_obj = CreateCircle (coordx, coordy, srrad/1000)   'as distance units are set in km and radius is in m
+		ring_obj = ConvertToRegion(ring_obj)
+
+		Alter Object ring_obj
+		Info OBJ_INFO_PEN, ring_pen
+		Info OBJ_INFO_Brush, ring_brush
+		Update SAR_Tool_Rings
+			Set obj = ring_obj where rowid = i_row_id	
+
+		Fetch next from SAR_Tool_Rings
+	Loop
+	Commit Table SAR_Tool_Rings
+
+
+
+	'this maps the tables
+	'--------------------------------------------------------------------------
+	no_mapper_flag = False
+
+	i_win_id = FrontWindow()
+	If i_win_id = 0 Then               'this means nothing was open in MI, all tables are closed
+		no_mapper_flag = True
+		Set ProgressBars Off
+		Set Event Processing Off
+	ElseIf WindowInfo(i_win_id, WIN_INFO_TYPE) <> WIN_MAPPER Then				' we need to check this in case there are no mappers open or in front
+		no_mapper_flag = True
+		Set ProgressBars Off
+		Set Event Processing Off
+	Else
+		Set ProgressBars Off
+		Set Map Redraw Off
+		Set Event Processing Off
+	End If
+
+
+	If no_mapper_flag = True then				
+		Map From SAR_Tool_Sites, SAR_Tool_Rings
+		no_mapper_flag = False
+		Set Map Display position Zoom Entire Layer SAR_Tool_Sites    			'this shows the whole layer on the map
+	Else
+		Add Map Layer SAR_Tool_Sites, SAR_Tool_Rings
+	End If
+	run command "Set Map Layer " + SAR_Tool_Sites + " Label Position Right " + site_font + " With Site_Id Auto On Overlap On Duplicates Off Offset 8 Parallel Off"
+
+	Set ProgressBars On
+	Set Map Redraw On
+	Set Event Processing On
+	'-------------------------------------------------
+
+
+	enable_toolbar_1 = True
+	If enable_toolbar_1 = True Then
+		Alter Button ID 2 Enable
+	End If
+
+general_error_return:
+	Exit Sub
+
+
+
+'These are the error handlers
+'----------------------------------------
+general_error:
+Note "Error => description: "+error$()
+Resume general_error_return
+
+End Sub
+'---------------------------------------------------
+
+
+
+
+
+
+
+
+
+'---------------------------------------------------
+' this brings up the edit settings dialog
+'---------------------------------------------------
+Sub edit_settings_sub
+Dim width_temp_1 As Float
+Dim count, i, k, j As Integer
+
+
+	cancel_import = False
+
+	'This sets up some parameters for the dialog
+	'--------------------------------------------
+	width_temp_1 = 55+70
+
+	'this is the input dialog for the symbols, lines and fills   
+	'-----------------------------------------------------------
+	Dialog Title "Set Display Properties Dialog" width 140+70 height 310  Position 20,40
+
+	Control GroupBox
+	Title "" 
+	Position width_temp_1+30, 17 Width 30 Height 125
+
+	Control GroupBox 
+	Position 10, 17 Width 105+70 Height 35
+	Control GroupBox 
+	Position 10, 47 Width 105+70 Height 35
+	Control GroupBox 
+	Position 10, 77 Width 105+70 Height 35
+	Control GroupBox 
+	Position 10, 107 Width 105+70 Height 35
+
+	Control StaticText
+	Title "Symbol For Sites:" Position 15, 30
+	Control StaticText
+	Title "Font For Sites:" Position 15, 60
+	Control StaticText
+	Title "Pen For Rings:" Position 15, 90
+	Control StaticText
+	Title "Brush For Rings:" Position 15, 120
+
+	Control SymbolPicker value site_sym
+	Position width_temp_1+35, 25
+	Into site_sym
+	ID 1
+	Control FontPicker value site_font
+	Position width_temp_1+35, 55
+	Into site_font
+	ID 2
+	Control PenPicker value ring_pen
+	Position width_temp_1+35, 85
+	Into ring_pen
+	ID 3
+	Control BrushPicker value ring_brush	
+	Position width_temp_1+35, 115
+	Into ring_brush
+	ID 4
+
+	Control StaticText
+	Title "Zoom Factor for Each SAR Map:" Position 15, 160
+	Control EditText
+	Value map_zoom
+	Into map_zoom
+	Position 140, 157 Width 30
+	Control StaticText
+	Title "NOTE: this is the ratio of each SAR map width to" Position 15, 175
+	Control StaticText
+	Title "the actual SAR radius" Position 15, 185
+
+
+	Control Button	
+	Title "&Save settings to a .set file"
+	Calling save_settings_sub
+	Position 45, 210 Width 115
+
+	Control Button	
+	Title "&Load settings from a .set file"
+	Calling load_settings_sub
+	Position 45, 230 Width 115
+
+	Control Button	
+	Title "&Load default settings"
+	Calling load_default_settings_sub
+	Position 45, 250 Width 115
+
+	Control OKButton
+	Position 40, 280
+	Control CancelButton
+	Position 60+70, 280
+
+	If CommandInfo(CMD_INFO_DLG_OK) = False Then
+		cancel_import = True
+		Exit Sub
+	End If
+
+
+
+End Sub
+'---------------------------------------------------
+
+
+
+
+
+
+'---------------------------------------------------
+' this saves settings
+'---------------------------------------------------
+Sub save_settings_sub
+Dim set_file_name As String
+Dim i, b_color, f_color, pat As Integer
+Dim data As String
+
+
+	site_sym = ReadControlValue(1) 
+	site_font = ReadControlValue(2) 
+	ring_pen = ReadControlValue(3)
+	ring_brush = ReadControlValue(4)
+
+	set_file_name = FileSaveAsDlg("","","set","Please name the settings file...")
+
+OnError GoTo set_file_open
+	Open File set_file_name For Output As #1
+	For i = 1 to 20000   ' I am cleaning up to 20,000 lines
+		data = ""
+		print #1, data
+	Next
+	Close File #1
+
+
+
+	'This opens the cleaned file for writing
+	'---------------------------------------
+	Open File set_file_name For Output As #1
+
+	'This writes the section header
+	'-------------------------------
+	data = "Display Properties"
+	print #1, data
+	data = "-----------------------------"
+	print #1, data
+
+	'This is all the subsequent data
+	'-----------------------------------
+	data = "site_sym "+site_sym
+	print #1, data
+	data = "site_font "+site_font
+	print #1, data
+	data = "ring_pen "+ring_pen
+	print #1, data
+
+	'This is to deal with the transparent background problem => it will not write -1 in the background color field, have to force it to
+	'-----------------------------------------------------------
+	pat = StyleAttr(ring_brush, BRUSH_PATTERN)   
+	f_color = StyleAttr(ring_brush, BRUSH_FORECOLOR)
+	b_color = StyleAttr(ring_brush, BRUSH_BACKCOLOR) 
+	data = "ring_brush Brush (" + pat + ", " + f_color + ", " + b_color + ")"	
+	print #1, data
+
+	'This writes the section footer
+	'-------------------------------
+	data = "-----------------------------"
+	print #1, data
+	data = "End of Section"
+	print #1, data
+	data = ""
+	print #1, data
+
+	Close File #1
+
+returnpoint1:
+
+	Exit Sub
+
+
+'-------------------------------------------
+set_file_open:
+Note "Error => description: "+error$()
+Resume returnpoint1
+
+End Sub
+'---------------------------------------------------
+
+
+
+
+
+
+
+'---------------------------------------------------
+' this loads previously saved settings
+'---------------------------------------------------
+Sub load_settings_sub
+Dim i_win_id, a_s, d_s, pf_filename_test, pf_filename_temp, pf_user_path_temp As String
+
+Dim set_path, set_file_name, set_file_name_temp, line_data, var_name_old, var_name, var_type, var_val As String
+Dim read_flag_display As Logical
+Dim a, b, c, d, e, f, i, j, k, pos(10), length_line, s(3) As Integer
+Dim var As Alias
+
+	
+	Set ProgressBars Off
+	Set Map Redraw Off
+	Set Event Processing Off
+
+
+	read_flag_display = False
+
+onerror goto problem
+
+	'This gets the project file name from the user
+	'-----------------------------------------------
+	set_file_name = FileOpenDlg("","","set","Please select the .set file...")
+
+	If set_file_name = "" Then
+		Exit Sub
+	End If
+
+	set_path = PathToDirectory$(set_file_name)
+	set_file_name_temp = set_file_name
+
+	
+	'This opens it for reading
+	'--------------------------------
+	Open File set_file_name_temp For Input As #1
+	Do While Not EOF(1)
+		Line Input #1, line_data
+		line_data = LTrim$(line_data)                  ' this removes spaces from the beginning of the line		
+		line_data = RTrim$(line_data)					  ' this removes spaces from the end of the line
+		length_line = len(line_data)
+
+		'This reads the project settings, they are ordered into sections with headers and footers
+		'--------------------------------------------------------------
+
+		'This is the display properties section
+		'-------------------------------------					
+		If line_data = "Display Properties" Then 
+			read_flag_display = True
+		ElseIf line_data = "End of Section" Then
+			read_flag_display = False
+		ElseIf read_flag_display = True and Left$(line_data,10) <> "----------" Then
+			pos(8) = InStr(1,line_data,Chr$(32))
+			pos(9) = InStr(pos(8)+1,line_data,Chr$(32))	
+
+			var_type = mid$(line_data, pos(8)+1, pos(9)-pos(8)-1)
+			var_val =	right$(line_data,length_line - pos(9))
+			var_name = left$(line_data,pos(8)-1)
+
+			If var_name = "site_sym" Then
+				pos(1) = InStr(1,line_data,Chr$(40))
+				pos(2) = InStr(1,line_data,Chr$(44))
+				pos(3) = InStr(pos(2)+1,line_data,Chr$(44))
+				pos(4) = InStr(pos(3)+1,line_data,Chr$(44))
+				pos(5) = InStr(pos(4)+1,line_data,Chr$(44))
+				pos(6) = InStr(pos(5)+1,line_data,Chr$(44))
+				pos(7) = InStr(1,line_data,Chr$(41))
+				If pos(4) = 0 Then    'this is a regular symbol, not a font symbol
+					a = val(mid$(line_data, pos(1)+1, pos(2)-pos(1)-1))
+					b = val(mid$(line_data, pos(2)+1, pos(3)-pos(2)-1))
+					c = val(mid$(line_data, pos(3)+1, pos(7)-pos(3)-1))
+					site_sym = MakeSymbol(a,b,c)
+				Else					
+					a = val(mid$(line_data, pos(1)+1, pos(2)-pos(1)-1))
+					b = val(mid$(line_data, pos(2)+1, pos(3)-pos(2)-1))
+					c = val(mid$(line_data, pos(3)+1, pos(4)-pos(3)-1))
+					d_s = mid$(line_data, pos(4)+2, pos(5)-pos(4)-3)
+					e = val(mid$(line_data, pos(5)+1, pos(6)-pos(5)-1))
+					f = val(mid$(line_data, pos(6)+1, pos(7)-pos(6)-1))
+					site_sym = MakeFontSymbol(a,b,c,d_s,e,f)
+				End If
+			ElseIf var_name = "site_font" Then
+				pos(1) = InStr(1,line_data,Chr$(40))
+				pos(2) = InStr(1,line_data,Chr$(44))
+				pos(3) = InStr(pos(2)+1,line_data,Chr$(44))
+				pos(4) = InStr(pos(3)+1,line_data,Chr$(44))
+				pos(5) = InStr(pos(4)+1,line_data,Chr$(44))
+				pos(6) = InStr(1,line_data,Chr$(41))
+				a_s = mid$(line_data, pos(1)+2, pos(2)-pos(1)-3)
+				b = val(mid$(line_data, pos(2)+1, pos(3)-pos(2)-1))
+				c = val(mid$(line_data, pos(3)+1, pos(4)-pos(3)-1))
+				d = val(mid$(line_data, pos(4)+1, pos(5)-pos(4)-1))
+				e = val(mid$(line_data, pos(5)+1, pos(6)-pos(5)-1))
+				site_font = MakeFont(a_s,b,c,d,e)
+			ElseIf var_name = "ring_pen"  Then
+				pos(1) = InStr(1,line_data,Chr$(40))
+				pos(2) = InStr(1,line_data,Chr$(44))
+				pos(3) = InStr(pos(2)+1,line_data,Chr$(44))
+				pos(4) = InStr(1,line_data,Chr$(41))
+				a = val(mid$(line_data, pos(1)+1, pos(2)-pos(1)-1))
+				b = val(mid$(line_data, pos(2)+1, pos(3)-pos(2)-1))
+				c = val(mid$(line_data, pos(3)+1, pos(4)-pos(3)-1))
+				ring_pen = MakePen(a,b,c)
+			ElseIf var_name = "ring_brush" Then
+				pos(1) = InStr(1,line_data,Chr$(40))
+				pos(2) = InStr(1,line_data,Chr$(44))
+				pos(3) = InStr(pos(2)+1,line_data,Chr$(44))
+				pos(4) = InStr(1,line_data,Chr$(41))
+				a = val(mid$(line_data, pos(1)+1, pos(2)-pos(1)-1))
+				b = val(mid$(line_data, pos(2)+1, pos(3)-pos(2)-1))
+				c = val(mid$(line_data, pos(3)+1, pos(4)-pos(3)-1))
+				ring_brush = MakeBrush(a,b,c)
+			End If
+		End If
+	Loop
+
+	Close File #1
+
+	Alter Control 1 Value site_sym
+	Alter Control 2 Value site_font
+	Alter Control 3 Value ring_pen
+	Alter Control 4 Value ring_brush
+
+returnpoint1:	
+	Set ProgressBars On
+	Set Map Redraw On
+	Set Event Processing On
+
+	Exit Sub
+
+'---------------------------------------
+problem:
+Note "Error => description: "+error$()
+Resume returnpoint1
+
+
+End Sub
+'---------------------------------------------------
+
+
+
+
+
+'---------------------------------------------------
+' this loads the default settings
+'---------------------------------------------------
+Sub load_default_settings_sub
+
+	site_sym = MakeSymbol (34,16711680,12)
+	site_font = MakeFont ("Arial",257,8,0,16777215)
+	ring_pen = MakePen (3,4,16711680)
+	ring_brush = MakeBrush (1,16777215,16777215)
+
+	Alter Control 1 Value site_sym
+	Alter Control 2 Value site_font
+	Alter Control 3 Value ring_pen
+	Alter Control 4 Value ring_brush
+
+End Sub
+'---------------------------------------------------
+
+
+
+
+
+
+'---------------------------------------------------
+' this prepares for the SR Creation with XL
+'---------------------------------------------------
+Sub pre_export_sub
+Dim dde_cmd As String
+Dim topic_list As String
+Dim proj_export As String
+
+
+	Print Chr$(12)
+	Print "Mapinfo is preparing to create the SAR maps"
+	Print "please wait...."
+
+	Call x_factor_sub
+
+
+'this proc will set the conversation id with xl for a particular workbook
+'-----------------------------------------------------------
+
+	'first test here if xl is open or not and open a ch with the XL instance
+	'-------------------------------------------
+	can_open_xl = False         'I think this var is not required.....    need to remove	
+	xl_is_open = False
+	seed_is_open = False
+
+returnpoint2:    
+onerror goto excel_not_open
+	ch_id_1 = DDEInitiate("Excel","System")
+	xl_is_open = True
+returnpoint1:          'at this point xl_is_open tells me if xl is already open or not
+
+	If xl_is_open = False Then
+onerror goto excel_error
+		Run Program "excel.exe"
+		can_open_xl = True
+		xl_is_open = True
+		ch_id_1 = DDEInitiate("Excel","System")
+	End If
+onerror goto 0
+'----------------------------------------------
+
+
+   'Here we make sure the "SR_Seed.xls" file is freshly opened in xl
+   '---------------------------------------------------
+onerror goto seed_not_open
+	ch_id_2 = DDEInitiate("Excel","SR_Seed.xls")
+	seed_is_open = True
+returnpoint3:
+onerror goto 0
+
+onerror goto xl_retry
+	If seed_is_open = False Then
+		dde_cmd = "[Open(""" + tool_dir + "SR_Seed.xls"")]"
+		DDEExecute ch_id_1, dde_cmd
+returnpoint4:
+		ch_id_2 = DDEInitiate("Excel","SR_Seed.xls")
+		seed_is_open = True
+	End If
+
+	proj_export = TableInfo("SAR_Tool_Sites",tab_info_coordsys_name)
+
+	DDEPoke ch_id_2, "R1C13", proj_export
+	DDEPoke ch_id_2, "R2C13", input_filename
+	DDEPoke ch_id_2, "R3C13", user_path
+	DDEPoke ch_id_2, "R4C13", input_filename_short
+	
+	Call export_sub
+onerror goto 0
+
+Exit Sub
+
+
+'----------------------------------------------------
+excel_not_open:
+Resume returnpoint1
+
+excel_error:
+	'this failed beacuse the xl install is not properly registered with the Windows OS
+	Note "Please open an instance of MS Excel, then come back and click 'OK'"
+Resume returnpoint2
+
+seed_not_open:
+Resume returnpoint3
+
+xl_retry:
+Note "!!XL is asking a question, please answer it then come back and click 'OK'"
+Resume returnpoint4
+
+End Sub
+'---------------------------------------------------
+
+
+
+
+'---------------------------------------------------
+' this exports the SRs to XL
+'---------------------------------------------------
+Sub export_sub
+Dim count, i, j, s2_t, s_t, c_t, e_t, e2_t, num_rows, i_row_id, i_win_id As Integer
+Dim row_col, s_count As String
+Dim cell_data_alias As Alias
+Dim s_site_id, dde_cmd As String
+Dim coordx, coordy, srr, r_t As Float
+Dim bearingx, bearingy As String
+
+
+	Print Chr$(12)
+	Print "Mapinfo is creating the SAR maps"
+	Print "please wait...."
+
+
+	'This exports the SAR maps as jpgs for each site
+	'---------------------------------------------------
+	num_rows = TableInfo(SAR_Tool_Sites, Tab_Info_NRows)
+	s_t = Timer()
+	count = 1
+
+	Fetch First from SAR_Tool_Sites
+	Do While Not EOT (SAR_Tool_Sites)
+		cell_data_alias = SAR_Tool_Sites + ".Site_Id"
+		s_site_id = cell_data_alias
+		cell_data_alias = SAR_Tool_Sites + ".Lat"
+		coordy = cell_data_alias
+		cell_data_alias = SAR_Tool_Sites + ".N_S"
+		bearingy = cell_data_alias
+		cell_data_alias = SAR_Tool_Sites + ".Lon"
+		coordx = cell_data_alias
+		cell_data_alias = SAR_Tool_Sites + ".E_W"
+		bearingx = cell_data_alias
+		cell_data_alias = SAR_Tool_Sites + ".Search_Ring_Radius"
+		srr = cell_data_alias
+		cell_data_alias = SAR_Tool_Sites + ".rowid"
+		i_row_id = cell_data_alias
+
+		If bearingx = "W" Then
+			coordx = -coordx
+		End If
+		If bearingy = "S" Then
+			coordy = -coordy
+		End If
+
+		Set Map Center(coordx,coordy) Display position Zoom srr*map_zoom/1000 Units "km"
+
+		i_win_id = FrontWindow()
+		Save Window i_win_id
+			As user_path + s_site_id + ".jpg"
+			Type "JPEG"
+
+		c_t = Timer()
+		e_t = c_t - s_t    ' this is the # seconds that have elapsed since the start of processing
+		r_t = (num_rows-count)*e_t/(count*60)
+
+		Print Chr$(12)
+		Print "Mapinfo is creating the SAR maps"
+		Print "please wait...."
+		If r_t < 1 Then
+			Print "~"+Round(r_t*60,1)+" secs to go"
+		Else
+			Print "~"+Round(r_t,1)+" mins to go"
+		End If
+
+		count = count + 1
+		Fetch Next from SAR_Tool_Sites
+
+	Loop
+
+	Print Chr$(12)
+	Print "Processing in Excel"
+	Print "Please go to Excel to"
+	Print "view progress and Results"
+
+	Set Map Display position Zoom Entire Layer SAR_Tool_Sites    			'this shows the whole layer on the map
+
+	'Here we start the XL macro, note: once a macro starts, XL ignores all dde commands, so we can not talk to xl anymore, can not get status etc...
+	'---------------------------------------------------------------------
+onerror goto waiting
+	dde_cmd = "[Run(""SR_Seed.xls!XL_Process"")]"
+	DDEExecute ch_id_2, dde_cmd
+returnpoint1:
+onerror goto 0
+
+'	Note "Mapinfo is finished."+chr$(10)+chr$(10)+"Excel is currently creating your SAR forms."+chr$(10)+chr$(10)+"Please go to Excel to view the Progress and Results"
+
+	DDETerminateAll
+
+Exit Sub
+
+'----------------------------------------
+waiting:
+'need this as once the xl macro starts, xl ignores mi and sends no confirmation, so we have to use an error handler to stop mi crashing
+Resume returnpoint1
+
+
+End Sub
+'---------------------------------------------------
+
+
+
+
+
+
+
+
+
+'---------------------------------------------------
+' this makes the tool only work in certain places
+'---------------------------------------------------
+Sub x_factor_sub
+Dim i,j,k As Integer
+Dim coordx, coordy As Float
+Dim cell_data_alias As Alias
+Dim bearingx, bearingy As String
+
+
+	Fetch first from SAR_Tool_Sites
+	Do While Not EOT(SAR_Tool_Sites)
+		cell_data_alias = SAR_Tool_Sites + ".Lon"
+		coordx = cell_data_alias
+		cell_data_alias = SAR_Tool_Sites + ".Lat"
+		coordy = cell_data_alias
+		cell_data_alias = SAR_Tool_Sites + ".N_S"
+		bearingy = cell_data_alias
+		cell_data_alias = SAR_Tool_Sites + ".E_W"
+		bearingx = cell_data_alias
+
+		If bearingx = "W" Then
+			coordx = -coordx
+		End If
+		If bearingy = "S" Then
+			coordy = -coordy
+		End If
+
+		If Distance(lon_orig,lat_orig,coordx,coordy,"km") > dist Then
+			Note "You are trying to use this tool outside of the enabled geographic area"+chr$(10)+"please contact nathanpaulscott@yahoo.com to change this"
+			End Program
+		End If
+
+		Fetch next from SAR_Tool_Sites
+		Fetch next from SAR_Tool_Sites
+		Fetch next from SAR_Tool_Sites
+	Loop
+
+End Sub
